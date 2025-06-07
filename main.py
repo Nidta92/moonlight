@@ -10,9 +10,8 @@ from aiogram.enums import ParseMode
 import os
 
 # === Конфигурация ===
-TOKEN = os.getenv("TOKEN")
-admin_ids_str = os.getenv("ADMIN_CHAT_IDS", "")
-ADMIN_CHAT_IDS = [int(x) for x in admin_ids_str.split(",") if x.strip()]
+TOKEN = "7938812822:AAE3hidbaMkycvDStg9JR2Q0F4Bpi7sP574"
+ADMIN_CHAT_IDS = [7714767386, 5914528610]
 COOLDOWN_SECONDS = 60
 DB_PATH = "bot_data.db"
 
