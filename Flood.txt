@@ -112,11 +112,9 @@ async def start_handler(message: types.Message):
 async def stats_handler(message: types.Message):
     if message.from_user.id in ADMIN_CHAT_IDS:
         c, s = get_stats()
-        await message.answer(
-    f"📊 <b>Статистика:</b>\n"
-    f"Жалоб: {c}\n"
-    f"Предложений: {s}"
-)
+        await message.answer(f"""📊 <b>Статистика:</b>
+Жалоб: {c}
+Предложений: {s}""")
     else:
         await message.answer("⛔ Команда только для админов.")
 
