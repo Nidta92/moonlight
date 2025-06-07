@@ -1,13 +1,14 @@
-
-import asyncio
+iimport asyncio
 import logging
+import os
 import sqlite3
 from datetime import datetime, timedelta
 
 from aiogram import Bot, Dispatcher, F, types
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.enums import ParseMode
-import os
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+from aiohttp import web
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler
 
 # === Конфигурация ===
 TOKEN = "7938812822:AAE3hidbaMkycvDStg9JR2Q0F4Bpi7sP574"
@@ -15,8 +16,16 @@ ADMIN_CHAT_IDS = [7714767386, 5914528610]
 COOLDOWN_SECONDS = 60
 DB_PATH = "bot_data.db"
 
-# === Настройка логов ===
+WEBHOOK_PATH = f"/webhook/{TOKEN}"
+BASE_WEBHOOK_URL = os.getenv("RENDER_EXTERNAL_URL")  # В Render надо обязательно задать эту переменную
+if not BASE_WEBHOOK_URL:
+    raise RuntimeError("RENDER_EXTERNAL_URL environment variable is not set!")
+WEBHOOK_URL = f"{BASE_WEBHOOK_URL}{WEBHOOK_PATH}"
+
+# === Логгирование ===
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 bot = Bot(token=TOKEN, parse_mode=ParseMode.HTML)
 dp = Dispatcher()
 
@@ -28,7 +37,7 @@ menu_keyboard = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
-# === БД ===
+# === Работа с БД ===
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -60,14 +69,12 @@ def can_send(user_id):
 
     if not row:
         return True, 0
-    else:
-        next_time = datetime.fromisoformat(row[0])
-        now = datetime.utcnow()
-        if now >= next_time:
-            return True, 0
-        else:
-            remaining = int((next_time - now).total_seconds())
-            return False, remaining
+    next_time = datetime.fromisoformat(row[0])
+    now = datetime.utcnow()
+    if now >= next_time:
+        return True, 0
+    remaining = int((next_time - now).total_seconds())
+    return False, remaining
 
 def update_cooldown(user_id):
     next_time = datetime.utcnow() + timedelta(seconds=COOLDOWN_SECONDS)
@@ -98,7 +105,6 @@ def get_stats():
     return complaints, suggestions
 
 # === Логика бота ===
-
 user_feedback_type = {}
 
 @dp.message(F.text == "/start")
@@ -111,12 +117,12 @@ async def start_handler(message: types.Message):
 @dp.message(F.text == "/stats")
 async def stats_handler(message: types.Message):
     if message.from_user.id in ADMIN_CHAT_IDS:
-        c, s = get_stats()
+        complaints, suggestions = get_stats()
         await message.answer(
-    f"📊 <b>Статистика:</b>\n"
-    f"Жалоб: {c}\n"
-    f"Предложений: {s}"
-)
+            f"📊 <b>Статистика:</b>\n"
+            f"Жалоб: {complaints}\n"
+            f"Предложений: {suggestions}"
+        )
     else:
         await message.answer("⛔ Команда только для админов.")
 
@@ -145,27 +151,56 @@ async def feedback_handler(message: types.Message):
     update_cooldown(user_id)
 
     for admin_id in ADMIN_CHAT_IDS:
-        if photo_id:
-            await bot.send_photo(
-                chat_id=admin_id,
-                photo=photo_id,
-                caption=f"📬 Новая {feedback_type.lower()}:\n\n{content}"
-            )
-        else:
-            await bot.send_message(
-                chat_id=admin_id,
-                text=f"📬 Новая {feedback_type.lower()}:\n\n{content}"
-            )
+        try:
+            if photo_id:
+                await bot.send_photo(
+                    chat_id=admin_id,
+                    photo=photo_id,
+                    caption=f"📬 Новая {feedback_type.lower()}:\n\n{content}"
+                )
+            else:
+                await bot.send_message(
+                    chat_id=admin_id,
+                    text=f"📬 Новая {feedback_type.lower()}:\n\n{content}"
+                )
+        except Exception as e:
+            logger.error(f"Ошибка при отправке админам: {e}")
 
     await message.answer("✅ Спасибо! Хотите отправить ещё что-нибудь?", reply_markup=menu_keyboard)
     user_feedback_type.pop(user_id, None)
 
-
-# === Запуск ===
-async def main():
+# === Запуск вебхука ===
+async def on_startup(app):
     init_db()
-    await bot.delete_webhook(drop_pending_updates=True)
-    await dp.start_polling(bot)
+    await bot.set_webhook(WEBHOOK_URL)
+    logger.info(f"Webhook установлен: {WEBHOOK_URL}")
+
+async def on_shutdown(app):
+    await bot.delete_webhook()
+    logger.info("Webhook удалён")
+
+async def main():
+    app = web.Application()
+    app.on_startup.append(on_startup)
+    app.on_shutdown.append(on_shutdown)
+
+    # Регистрируем обработчик для пути вебхука
+    SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path=WEBHOOK_PATH)
+
+    port = int(os.getenv("PORT", 8000))
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+
+    logger.info(f"🚀 Бот запущен на {WEBHOOK_URL} (порт {port})")
+
+    while True:
+        await asyncio.sleep(3600)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("Бот остановлен")
+
