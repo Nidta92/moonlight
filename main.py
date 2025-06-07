@@ -11,7 +11,8 @@ import os
 
 # === Конфигурация ===
 TOKEN = os.getenv("TOKEN")
-ADMIN_CHAT_IDS = list(map(int, os.getenv("ADMIN_CHAT_IDS", "").split(",")))
+admin_ids_str = os.getenv("ADMIN_CHAT_IDS", "")
+ADMIN_CHAT_IDS = [int(x) for x in admin_ids_str.split(",") if x.strip()]
 COOLDOWN_SECONDS = 60
 DB_PATH = "bot_data.db"
 
