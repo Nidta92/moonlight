@@ -149,20 +149,17 @@ async def feedback_handler(message: types.Message):
             await bot.send_photo(
                 chat_id=admin_id,
                 photo=photo_id,
-                caption=f"📬 Новая {feedback_type.lower()}:
-
-{content}"
+                caption=f"📬 Новая {feedback_type.lower()}:\n\n{content}"
             )
         else:
             await bot.send_message(
                 chat_id=admin_id,
-                text=f"📬 Новая {feedback_type.lower()}:
-
-{content}"
+                text=f"📬 Новая {feedback_type.lower()}:\n\n{content}"
             )
 
     await message.answer("✅ Спасибо! Хотите отправить ещё что-нибудь?", reply_markup=menu_keyboard)
     user_feedback_type.pop(user_id, None)
+
 
 # === Запуск ===
 async def main():
